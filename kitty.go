@@ -1,7 +1,6 @@
 package rasterm
 
 import (
-	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -17,6 +16,16 @@ const (
 	KITTY_IMG_HDR = "\x1b_G"
 	KITTY_IMG_FTR = "\x1b\\"
 )
+
+type KittyEncoder struct {
+	writer io.Writer
+}
+
+func NewKittyEncoder(writer io.Writer) KittyEncoder {
+	return KittyEncoder{
+		writer: writer,
+	}
+}
 
 type KittyImgOpts struct {
 	SrcX        uint32 // x=
@@ -40,17 +49,17 @@ func (o KittyImgOpts) ToHeader(opts ...string) string {
 		code rune
 	}
 	sFld := []fldmap{
-		fldmap{&o.SrcX, 'x'},
-		fldmap{&o.SrcY, 'y'},
-		fldmap{&o.SrcWidth, 'w'},
-		fldmap{&o.SrcHeight, 'h'},
-		fldmap{&o.CellOffsetX, 'X'},
-		fldmap{&o.CellOffsetY, 'Y'},
-		fldmap{&o.DstCols, 'c'},
-		fldmap{&o.DstRows, 'r'},
-		fldmap{&o.ImageId, 'i'},
-		fldmap{&o.ImageNo, 'I'},
-		fldmap{&o.PlacementId, 'p'},
+		{&o.SrcX, 'x'},
+		{&o.SrcY, 'y'},
+		{&o.SrcWidth, 'w'},
+		{&o.SrcHeight, 'h'},
+		{&o.CellOffsetX, 'X'},
+		{&o.CellOffsetY, 'Y'},
+		{&o.DstCols, 'c'},
+		{&o.DstRows, 'r'},
+		{&o.ImageId, 'i'},
+		{&o.ImageNo, 'I'},
+		{&o.PlacementId, 'p'},
 	}
 
 	for _, f := range sFld {
@@ -74,63 +83,125 @@ func IsKittyCapable() bool {
 	return (len(V["KITTY_WINDOW_ID"]) > 0) || (V["TERM_PROGRAM"] == "wezterm") || (V["TERM_PROGRAM"] == "ghostty")
 }
 
-// Display local PNG file
-// - pngFileName must be directly accesssible from Kitty instance
-// - pngFileName must be an absolute path
-func KittyWritePNGLocal(out io.Writer, pngFileName string, opts KittyImgOpts) error {
-
-	_, e := fmt.Fprint(out, opts.ToHeader("a=T", "f=100", "t=f"))
-	if e != nil {
-		return e
-	}
-
-	enc64 := base64.NewEncoder(base64.StdEncoding, out)
-
-	_, e = fmt.Fprint(enc64, pngFileName)
-	if e != nil {
-		return e
-	}
-
-	e = enc64.Close()
-	if e != nil {
-		return e
-	}
-
-	_, e = fmt.Fprint(out, KITTY_IMG_FTR)
-	return e
-}
-
-// Serialize image.Image into Kitty terminal in-band format.
-func KittyWriteImage(out io.Writer, iImg image.Image, opts KittyImgOpts) error {
-
-	pBuf := new(bytes.Buffer)
-	if E := png.Encode(pBuf, iImg); E != nil {
-		return E
-	}
-
-	return KittyCopyPNGInline(out, pBuf, opts)
-}
-
-// Serialize PNG image from io.Reader into Kitty terminal in-band format.
-func KittyCopyPNGInline(out io.Writer, in io.Reader, opts KittyImgOpts) error {
-
-	_, err := fmt.Fprint(out, opts.ToHeader("a=T", "f=100", "t=d", "m=1"), KITTY_IMG_FTR)
+func (self KittyEncoder) EncodeLocal(location string, opts KittyImgOpts) error {
+	writer, err := self.EncodeLocalRaw(opts)
 	if err != nil {
 		return err
 	}
 
-	// PIPELINE: PNG (io.Reader) -> B64 -> CHUNKER -> (io.Writer)
-	// SEND IN 4K CHUNKS
-	cw := kittyChunkWri{
-		nChunkSize: 4096,
-		iWri:       out,
-	}
+	_, err = writer.Write([]byte(location))
 
-	enc64 := base64.NewEncoder(base64.StdEncoding, &cw)
-	_, err = io.Copy(enc64, in)
 	return errors.Join(
 		err,
-		enc64.Close(),
-		cw.Close(),
+		writer.Close(),
 	)
+}
+
+func (self KittyEncoder) EncodeLocalRaw(opts KittyImgOpts) (io.WriteCloser, error) {
+	localWriter, err := self.EncodeLocalBase64(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	base64Writer := base64.NewEncoder(base64.RawStdEncoding, self.writer)
+
+	return DualWriteCloser{
+		inner: base64Writer,
+		a:     base64Writer,
+		b:     localWriter,
+	}, nil
+}
+
+func (self KittyEncoder) pathHeader(opts KittyImgOpts) error {
+	_, err := fmt.Fprint(self.writer, opts.ToHeader("a=T", "f=100", "t=f"))
+	return err
+}
+
+type KittyLocalEncoder struct {
+	inner io.Writer
+}
+
+func (self KittyLocalEncoder) Write(buffer []byte) (int, error) {
+	return self.inner.Write(buffer)
+}
+
+func (self KittyLocalEncoder) Close() error {
+	_, err := fmt.Fprint(self.inner, KITTY_IMG_FTR)
+	return err
+}
+
+func (self KittyEncoder) EncodeLocalBase64(opts KittyImgOpts) (io.WriteCloser, error) {
+	if err := self.pathHeader(opts); err != nil {
+		return nil, err
+	}
+
+	return KittyLocalEncoder{
+		inner: self.writer,
+	}, nil
+}
+
+func (self KittyEncoder) EncodeImage(image image.Image, opts KittyImgOpts) error {
+	writer, err := self.EncodeImageRaw(opts)
+	if err != nil {
+		return err
+	}
+
+	return errors.Join(
+		png.Encode(writer, image),
+		writer.Close(),
+	)
+}
+
+type DualWriteCloser struct {
+	inner io.Writer
+	a     io.Closer
+	b     io.Closer
+}
+
+func (self DualWriteCloser) Write(buffer []byte) (int, error) {
+	return self.inner.Write(buffer)
+}
+
+func (self DualWriteCloser) Close() error {
+	return errors.Join(
+		self.a.Close(),
+		self.b.Close(),
+	)
+}
+
+func (self KittyEncoder) EncodeImageRaw(opts KittyImgOpts) (io.WriteCloser, error) {
+	imageWriter, err := self.EncodeImageBase64(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	base64Writer := base64.NewEncoder(base64.RawStdEncoding, imageWriter)
+
+	return DualWriteCloser{
+		inner: base64Writer,
+		a:     base64Writer,
+		b:     imageWriter,
+	}, nil
+}
+
+func (self KittyEncoder) imageHeader(opts KittyImgOpts) error {
+	_, err := fmt.Fprint(self.writer, opts.ToHeader("a=T", "f=100", "t=d", "m=1"), KITTY_IMG_FTR)
+	return err
+}
+
+func (self KittyEncoder) EncodeImageBase64(opts KittyImgOpts) (io.WriteCloser, error) {
+	if err := self.imageHeader(opts); err != nil {
+		return nil, err
+	}
+
+	return self.base64Writer(), nil
+}
+
+func (self KittyEncoder) base64Writer() io.WriteCloser {
+	writer := KittyImageWriter{
+		chunkSize: 4096,
+		inner:     self.writer,
+	}
+
+	return writer
 }

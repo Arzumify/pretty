@@ -103,18 +103,21 @@ func testImage(iWri io.Writer, fpath, mode string) error {
 		}
 
 	case "kitty":
+		encoder := NewKittyEncoder(iWri)
 
 		if fmtName == "png" {
 
 			fmt.Println("Kitty PNG Local File")
-			eF := KittyWritePNGLocal(iWri, fpath, KittyImgOpts{})
+			eF := encoder.EncodeLocal(fpath, KittyImgOpts{})
 			fmt.Println("\nKitty PNG Inline")
-			eI := KittyCopyPNGInline(iWri, fIn, KittyImgOpts{})
-			err = errors.Join(eI, eF)
+			writer, eI := encoder.EncodeImageRaw(KittyImgOpts{})
+			_, eC := io.Copy(writer, fIn)
+			eD := writer.Close()
+			err = errors.Join(eD, eC, eI, eF)
 
 		} else {
 
-			err = KittyWriteImage(iWri, iImg, KittyImgOpts{})
+			err = encoder.EncodeImage(iImg, KittyImgOpts{})
 		}
 	}
 
