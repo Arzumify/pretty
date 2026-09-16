@@ -103,7 +103,7 @@ func (self KittyEncoder) EncodeLocalRaw(opts KittyImgOpts) (io.WriteCloser, erro
 		return nil, err
 	}
 
-	base64Writer := base64.NewEncoder(base64.RawStdEncoding, self.writer)
+	base64Writer := base64.NewEncoder(base64.StdEncoding, self.writer)
 
 	return DualWriteCloser{
 		inner: base64Writer,
@@ -175,7 +175,7 @@ func (self KittyEncoder) EncodeImageRaw(opts KittyImgOpts) (io.WriteCloser, erro
 		return nil, err
 	}
 
-	base64Writer := base64.NewEncoder(base64.RawStdEncoding, imageWriter)
+	base64Writer := base64.NewEncoder(base64.StdEncoding, imageWriter)
 
 	return DualWriteCloser{
 		inner: base64Writer,

@@ -92,14 +92,14 @@ func testImage(iWri io.Writer, fpath, mode string) error {
 		err = ItermCopyFileInline(iWri, fIn, nImgLen)
 
 	case "sixel":
+		encoder := NewSixelEncoder(iWri)
 
 		if iPaletted, bOK := iImg.(*image.Paletted); bOK {
-
-			err = SixelWriteImage(iWri, iPaletted)
-
+			encoder.Palette = iPaletted.Palette
+			encoder.Dither = true
+			err = encoder.Encode(iImg)
 		} else {
-
-			fmt.Println("[NOT PALETTED, SKIPPING.]")
+			err = encoder.Encode(iImg)
 		}
 
 	case "kitty":
