@@ -4,7 +4,7 @@ go 1.26.7
 
 require (
 	github.com/akamensky/argparse v1.4.0
-	github.com/arzumify/pritty v1.0.0
+	github.com/arzumify/pritty v1.1.0
 )
 
 require (

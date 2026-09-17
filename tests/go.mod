@@ -2,7 +2,7 @@ module github.com/arzumify/pritty/tests
 
 go 1.26.7
 
-require github.com/arzumify/pritty v1.0.0
+require github.com/arzumify/pritty v1.1.0
 
 require (
 	github.com/mattn/go-sixel v0.0.12 // indirect
