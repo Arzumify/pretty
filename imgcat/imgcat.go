@@ -16,10 +16,15 @@ import (
 func main() {
 	parser := argparse.NewParser("imgcat", "Prints images to the console")
 	path := parser.StringPositional(&argparse.Options{
-		Required: true,
+		Help: "Path to the image",
 	})
-	forceInline := parser.Flag("i", "force-inline", &argparse.Options{
+	forceInline := parser.Flag("f", "force-inline", &argparse.Options{
 		Default: false,
+		Help:    "Forces all images to be sent as inline rather than as paths",
+	})
+	info := parser.Flag("i", "info", &argparse.Options{
+		Default: false,
+		Help:    "Does not display images and instead reports information about the terminal",
 	})
 
 	if err := parser.Parse(os.Args); err != nil {
@@ -27,14 +32,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *path == "" {
-		fmt.Println(parser.Usage("Error: no path provided"))
-		os.Exit(1)
-	}
-
 	graphics, err := pritty.GetGraphicsHandle(os.Stdin, os.Stdout)
 	if err != nil {
 		panic(err)
+	}
+
+	if *info {
+		fmt.Printf(
+			"Sixel support: %t\n"+
+				"Iterm support: %t (streaming: %t)\n"+
+				"Kitty support: %t (local: %t)",
+			graphics.Sixel,
+			graphics.Iterm&pritty.ItermSupported != 0,
+			graphics.Iterm&pritty.ItermStreaming != 0,
+			graphics.Kitty&pritty.KittySupported != 0,
+			graphics.Kitty&pritty.KittyLocal != 0,
+		)
+		return
+	}
+
+	if *path == "" {
+		fmt.Println(parser.Usage("Error: no path provided"))
+		os.Exit(1)
 	}
 
 	encoder, err := graphics.Optimal(os.Stdout)

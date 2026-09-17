@@ -1,12 +1,16 @@
 package pritty
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"image"
 	"image/png"
 	"io"
+	"math/rand"
+	"os"
+	"path"
 	"strings"
 )
 
@@ -15,6 +19,17 @@ import (
 const (
 	KITTY_IMG_HDR = "\x1b_G"
 	KITTY_IMG_FTR = "\x1b\\"
+	// base64 decode of "pritty"
+	KITTY_PROBE_ID = 2797120951
+)
+
+var (
+	KITTY_PROBE_RESPONSE = fmt.Sprintf(
+		"%si=%d;",
+		KITTY_IMG_HDR,
+		KITTY_PROBE_ID,
+	)
+	KITTY_PROBE_OK = []byte("OK")
 )
 
 type KittyEncoder struct {
@@ -75,12 +90,67 @@ func (o KittyImgOpts) ToHeader(opts ...string) string {
 	return KITTY_IMG_HDR + strings.Join(opts, ",") + ";"
 }
 
-// checks if terminal supports kitty image protocols
-func GetKittySupport() bool {
+const (
+	KittySupported = 1 << iota
+	KittyLocal
+)
 
-	// TODO: more rigorous check
-	V := GetEnvIdentifiers()
-	return (len(V["KITTY_WINDOW_ID"]) > 0) || (V["TERM_PROGRAM"] == "wezterm") || (V["TERM_PROGRAM"] == "ghostty")
+type KittySupport = uint8
+
+// checks if terminal supports kitty image protocol
+func GetKittySupport(stdin io.Reader, stdout io.Writer) (support KittySupport, err error) {
+	path := path.Join(os.TempDir(), fmt.Sprintf("pritty-probe-%d", rand.Uint32()))
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return 0, err
+	}
+
+	_, err = file.Write([]byte{0, 0, 0})
+	if err != nil {
+		return 0, errors.Join(
+			os.RemoveAll(path),
+			err,
+		)
+	}
+
+	fmt.Fprintf(
+		stdout,
+		"%s%s%s",
+		KittyImgOpts{
+			SrcWidth:  1,
+			SrcHeight: 1,
+			ImageId:   KITTY_PROBE_ID,
+		}.ToHeader("a=q", "s=1", "v=1", "t=f", "f=24"),
+		base64.StdEncoding.EncodeToString([]byte(path)),
+		KITTY_IMG_FTR,
+	)
+
+	err = awaitTerminalResponse(stdin, []byte(KITTY_PROBE_RESPONSE))
+	if err != nil {
+		if errors.Is(err, E_TIMED_OUT) {
+			return 0, os.RemoveAll(path)
+		} else {
+			return 0, errors.Join(
+				os.RemoveAll(path),
+				err,
+			)
+		}
+	}
+
+	buffer := make([]byte, 2)
+	_, err = io.ReadFull(stdin, buffer)
+	if err != nil {
+		return KittySupported, errors.Join(
+			os.RemoveAll(path),
+			err,
+		)
+	}
+
+	if bytes.Equal(buffer, KITTY_PROBE_OK) {
+		return KittySupported | KittyLocal, nil
+	} else {
+		return KittySupported, os.RemoveAll(path)
+	}
 }
 
 func (encoder KittyEncoder) EncodeLocal(path string) error {

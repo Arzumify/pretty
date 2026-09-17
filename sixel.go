@@ -2,7 +2,6 @@ package pritty
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"slices"
@@ -18,11 +17,9 @@ const (
 
 func GetSixelSupport(stdin io.Reader, stdout io.Writer) (bool, error) {
 	fmt.Fprint(stdout, SIXEL_DA1_REQUEST)
-	header := make([]byte, 3)
-	for !bytes.Equal(header, []byte(SIXEL_DA1_RESPONSE)) {
-		if _, err := io.ReadFull(stdin, header); err != nil {
-			return false, err
-		}
+	err := awaitTerminalResponse(stdin, []byte(SIXEL_DA1_RESPONSE))
+	if err != nil {
+		return false, err
 	}
 
 	buffer, err := bufio.NewReader(stdin).ReadBytes('c')

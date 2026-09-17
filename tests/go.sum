@@ -1,0 +1,10 @@
+github.com/arzumify/pritty v1.0.0 h1:AUd6qKgc6LZK86duqsNFTHOeLsSlgI7KfVP6JNstWrU=
+github.com/arzumify/pritty v1.0.0/go.mod h1:NW0D7arEG7Ap+XK8O8bMIxW75VEo2VfhTjoqc449pxU=
+github.com/mattn/go-sixel v0.0.12 h1:pQadX/oJ4fhSi6RnFHggWELW1TvADrQP9b+Kdx1wNzs=
+github.com/mattn/go-sixel v0.0.12/go.mod h1:Z5QJ/vRbnpAl4CTN0NZ0mzURdMccsG7rpGZ5eJfZ6ys=
+github.com/soniakeys/quant v1.0.0 h1:N1um9ktjbkZVcywBVAAYpZYSHxEfJGzshHCxx/DaI0Y=
+github.com/soniakeys/quant v1.0.0/go.mod h1:HI1k023QuVbD4H8i9YdfZP2munIHU4QpjsImz6Y6zds=
+golang.org/x/sys v0.39.0 h1:CvCKL8MeisomCi6qNZ+wbb0DN9E5AATixKsvNtMoMFk=
+golang.org/x/sys v0.39.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
+golang.org/x/term v0.38.0 h1:PQ5pkm/rLO6HnxFR7N2lJHOZX6Kez5Y1gDSJla6jo7Q=
+golang.org/x/term v0.38.0/go.mod h1:bSEAKrOT1W+VSu9TSCMtoGEOUcKxOKgl3LE5QEF/xVg=
