@@ -1,4 +1,4 @@
-module github.com/BourgeoisBear/rasterm
+module github.com/arzumify/pritty
 
 go 1.24.0
 

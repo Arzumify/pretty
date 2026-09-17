@@ -1,24 +1,37 @@
-package rasterm
+package pritty
 
 import (
 	"fmt"
 	"io"
 )
 
+type KittyLocalWriter struct {
+	writer io.Writer
+}
+
+func (writer KittyLocalWriter) Write(buffer []byte) (int, error) {
+	return writer.writer.Write(buffer)
+}
+
+func (writer KittyLocalWriter) Close() error {
+	_, err := fmt.Fprint(writer.writer, KITTY_IMG_FTR)
+	return err
+}
+
 type KittyImageWriter struct {
-	// the inner writer
-	inner io.Writer
+	// the writer writer
+	writer io.Writer
 	// the size of each chunk to send
 	chunkSize int
 }
 
 // Finishes the current stream. No more data may be written aften this.
-func (self KittyImageWriter) Close() error {
-	_, err := fmt.Fprint(self.inner, KITTY_IMG_HDR, "m=0;", KITTY_IMG_FTR)
+func (writer KittyImageWriter) Close() error {
+	_, err := fmt.Fprint(writer.writer, KITTY_IMG_HDR, "m=0;", KITTY_IMG_FTR)
 	return err
 }
 
-func (self KittyImageWriter) Write(buffer []byte) (int, error) {
+func (writer KittyImageWriter) Write(buffer []byte) (int, error) {
 	bufferRemaining := len(buffer)
 	bufferWritten := 0
 	chunkWritten := 0
@@ -28,8 +41,8 @@ func (self KittyImageWriter) Write(buffer []byte) (int, error) {
 		var toWrite int
 
 		// if the
-		if (chunkWritten + bufferRemaining) >= self.chunkSize {
-			toWrite = self.chunkSize - chunkWritten
+		if (chunkWritten + bufferRemaining) >= writer.chunkSize {
+			toWrite = writer.chunkSize - chunkWritten
 			chunkWritten = 0
 		} else {
 			toWrite = bufferRemaining
@@ -37,13 +50,13 @@ func (self KittyImageWriter) Write(buffer []byte) (int, error) {
 		}
 
 		// write prefix
-		_, err := fmt.Fprint(self.inner, KITTY_IMG_HDR, "m=1;")
+		_, err := fmt.Fprint(writer.writer, KITTY_IMG_HDR, "m=1;")
 		if err != nil {
 			return bufferWritten, err
 		}
 
 		// write data
-		n, err := self.inner.Write(buffer[:toWrite])
+		n, err := writer.writer.Write(buffer[:toWrite])
 		if err != nil {
 			return bufferWritten, err
 		}
@@ -54,7 +67,7 @@ func (self KittyImageWriter) Write(buffer []byte) (int, error) {
 		bufferWritten += n
 
 		// write suffix
-		_, err = fmt.Fprint(self.inner, KITTY_IMG_FTR)
+		_, err = fmt.Fprint(writer.writer, KITTY_IMG_FTR)
 		if err != nil {
 			return bufferWritten, err
 		}

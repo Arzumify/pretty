@@ -1,7 +1,9 @@
-package rasterm
+package pritty
 
 import (
 	"errors"
+	"image"
+	"io"
 	"os"
 	"regexp"
 	"strconv"
@@ -12,18 +14,119 @@ import (
 	"golang.org/x/term"
 )
 
+type GraphicsHandle struct {
+	Sixel bool
+	Iterm ItermSupport
+	Kitty bool
+}
+
+func GetGraphicsHandle(stdin *os.File, stdout *os.File) (_ GraphicsHandle, err error) {
+	fd := int(stdin.Fd())
+	state, err := term.MakeRaw(fd)
+	if err != nil {
+		return GraphicsHandle{
+			Sixel: false,
+			Iterm: 0,
+			Kitty: false,
+		}, err
+	}
+
+	defer func() {
+		err = term.Restore(fd, state)
+	}()
+
+	sixel, err := GetSixelSupport(stdin, stdout)
+	if err != nil {
+		return GraphicsHandle{
+			Sixel: false,
+			Iterm: 0,
+			Kitty: false,
+		}, err
+	}
+
+	return GraphicsHandle{
+		Sixel: sixel,
+		Iterm: GetItermSupport(),
+		Kitty: GetKittySupport(),
+	}, nil
+}
+
+type Encoder interface {
+	Encode(image image.Image) error
+}
+
+type EncodeLocal interface {
+	Encoder
+	EncodeLocal(path string) error
+}
+
+func (handle GraphicsHandle) Optimal(writer io.Writer) (Encoder, error) {
+	if handle.Kitty {
+		return NewKittyEncoder(writer), nil
+	} else if handle.Iterm&ItermSupported != 0 {
+		return NewItermEncoder(writer, handle.Iterm&ItermStreaming != 0), nil
+	} else if handle.Sixel {
+		return NewSixelEncoder(writer), nil
+	} else {
+		return nil, E_NO_PROTOCOL
+	}
+}
+
+func (handle GraphicsHandle) KittyEncoder(writer io.Writer) (Encoder, error) {
+	if handle.Kitty {
+		return NewKittyEncoder(writer), nil
+	} else {
+		return nil, E_UNSUPPORTED
+	}
+}
+
+func (handle GraphicsHandle) ItermEncoder(writer io.Writer) (Encoder, error) {
+	if handle.Iterm&ItermSupported != 0 {
+		return NewItermEncoder(writer, handle.Iterm&ItermStreaming != 0), nil
+	} else {
+		return nil, E_UNSUPPORTED
+	}
+}
+
+func (handle GraphicsHandle) SixelEncoder(writer io.Writer) (Encoder, error) {
+	if handle.Sixel {
+		return NewSixelEncoder(writer), nil
+	} else {
+		return nil, E_UNSUPPORTED
+	}
+}
+
 const (
 	ESC_ERASE_DISPLAY = "\x1b[2J\x1b[0;0H"
 )
 
 var (
-	E_NON_TTY   = errors.New("NON TTY")
-	E_TIMED_OUT = errors.New("TERM RESPONSE TIMED OUT")
+	E_NON_TTY     = errors.New("NON TTY")
+	E_TIMED_OUT   = errors.New("TERM RESPONSE TIMED OUT")
+	E_UNSUPPORTED = errors.New("graphics method not supported")
+	E_NO_PROTOCOL = errors.New("no supported protocols")
 )
 
 func IsTmuxScreen() bool {
 	TERM := strings.ToLower(strings.TrimSpace(os.Getenv("TERM")))
 	return strings.HasPrefix(TERM, "screen")
+}
+
+type DualWriteCloser struct {
+	writer io.Writer
+	a      io.Closer
+	b      io.Closer
+}
+
+func (writeCloser DualWriteCloser) Write(buffer []byte) (int, error) {
+	return writeCloser.writer.Write(buffer)
+}
+
+func (writeCloser DualWriteCloser) Close() error {
+	return errors.Join(
+		writeCloser.a.Close(),
+		writeCloser.b.Close(),
+	)
 }
 
 /*

@@ -1,4 +1,4 @@
-package rasterm
+package pritty
 
 import (
 	"encoding/base64"
@@ -76,20 +76,24 @@ func (o KittyImgOpts) ToHeader(opts ...string) string {
 }
 
 // checks if terminal supports kitty image protocols
-func IsKittyCapable() bool {
+func GetKittySupport() bool {
 
 	// TODO: more rigorous check
 	V := GetEnvIdentifiers()
 	return (len(V["KITTY_WINDOW_ID"]) > 0) || (V["TERM_PROGRAM"] == "wezterm") || (V["TERM_PROGRAM"] == "ghostty")
 }
 
-func (self KittyEncoder) EncodeLocal(location string, opts KittyImgOpts) error {
-	writer, err := self.EncodeLocalRaw(opts)
+func (encoder KittyEncoder) EncodeLocal(path string) error {
+	return encoder.EncodeLocalOpts(path, KittyImgOpts{})
+}
+
+func (encoder KittyEncoder) EncodeLocalOpts(path string, opts KittyImgOpts) error {
+	writer, err := encoder.EncodeLocalRaw(opts)
 	if err != nil {
 		return err
 	}
 
-	_, err = writer.Write([]byte(location))
+	_, err = writer.Write([]byte(path))
 
 	return errors.Join(
 		err,
@@ -97,51 +101,42 @@ func (self KittyEncoder) EncodeLocal(location string, opts KittyImgOpts) error {
 	)
 }
 
-func (self KittyEncoder) EncodeLocalRaw(opts KittyImgOpts) (io.WriteCloser, error) {
-	localWriter, err := self.EncodeLocalBase64(opts)
+func (encoder KittyEncoder) EncodeLocalRaw(opts KittyImgOpts) (io.WriteCloser, error) {
+	localWriter, err := encoder.EncodeLocalBase64(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	base64Writer := base64.NewEncoder(base64.StdEncoding, self.writer)
+	base64Writer := base64.NewEncoder(base64.StdEncoding, encoder.writer)
 
 	return DualWriteCloser{
-		inner: base64Writer,
-		a:     base64Writer,
-		b:     localWriter,
+		writer: base64Writer,
+		a:      base64Writer,
+		b:      localWriter,
 	}, nil
 }
 
-func (self KittyEncoder) pathHeader(opts KittyImgOpts) error {
-	_, err := fmt.Fprint(self.writer, opts.ToHeader("a=T", "f=100", "t=f"))
+func (encoder KittyEncoder) pathHeader(opts KittyImgOpts) error {
+	_, err := fmt.Fprint(encoder.writer, opts.ToHeader("a=T", "f=100", "t=f"))
 	return err
 }
 
-type KittyLocalEncoder struct {
-	inner io.Writer
-}
-
-func (self KittyLocalEncoder) Write(buffer []byte) (int, error) {
-	return self.inner.Write(buffer)
-}
-
-func (self KittyLocalEncoder) Close() error {
-	_, err := fmt.Fprint(self.inner, KITTY_IMG_FTR)
-	return err
-}
-
-func (self KittyEncoder) EncodeLocalBase64(opts KittyImgOpts) (io.WriteCloser, error) {
-	if err := self.pathHeader(opts); err != nil {
+func (encoder KittyEncoder) EncodeLocalBase64(opts KittyImgOpts) (io.WriteCloser, error) {
+	if err := encoder.pathHeader(opts); err != nil {
 		return nil, err
 	}
 
-	return KittyLocalEncoder{
-		inner: self.writer,
+	return KittyLocalWriter{
+		writer: encoder.writer,
 	}, nil
 }
 
-func (self KittyEncoder) EncodeImage(image image.Image, opts KittyImgOpts) error {
-	writer, err := self.EncodeImageRaw(opts)
+func (encoder KittyEncoder) Encode(image image.Image) error {
+	return encoder.EncodeOpts(image, KittyImgOpts{})
+}
+
+func (encoder KittyEncoder) EncodeOpts(image image.Image, opts KittyImgOpts) error {
+	writer, err := encoder.EncodeRaw(opts)
 	if err != nil {
 		return err
 	}
@@ -152,25 +147,8 @@ func (self KittyEncoder) EncodeImage(image image.Image, opts KittyImgOpts) error
 	)
 }
 
-type DualWriteCloser struct {
-	inner io.Writer
-	a     io.Closer
-	b     io.Closer
-}
-
-func (self DualWriteCloser) Write(buffer []byte) (int, error) {
-	return self.inner.Write(buffer)
-}
-
-func (self DualWriteCloser) Close() error {
-	return errors.Join(
-		self.a.Close(),
-		self.b.Close(),
-	)
-}
-
-func (self KittyEncoder) EncodeImageRaw(opts KittyImgOpts) (io.WriteCloser, error) {
-	imageWriter, err := self.EncodeImageBase64(opts)
+func (encoder KittyEncoder) EncodeRaw(opts KittyImgOpts) (io.WriteCloser, error) {
+	imageWriter, err := encoder.EncodeBase64(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -178,30 +156,28 @@ func (self KittyEncoder) EncodeImageRaw(opts KittyImgOpts) (io.WriteCloser, erro
 	base64Writer := base64.NewEncoder(base64.StdEncoding, imageWriter)
 
 	return DualWriteCloser{
-		inner: base64Writer,
-		a:     base64Writer,
-		b:     imageWriter,
+		writer: base64Writer,
+		a:      base64Writer,
+		b:      imageWriter,
 	}, nil
 }
 
-func (self KittyEncoder) imageHeader(opts KittyImgOpts) error {
-	_, err := fmt.Fprint(self.writer, opts.ToHeader("a=T", "f=100", "t=d", "m=1"), KITTY_IMG_FTR)
+func (encoder KittyEncoder) imageHeader(opts KittyImgOpts) error {
+	_, err := fmt.Fprint(encoder.writer, opts.ToHeader("a=T", "f=100", "t=d", "m=1"), KITTY_IMG_FTR)
 	return err
 }
 
-func (self KittyEncoder) EncodeImageBase64(opts KittyImgOpts) (io.WriteCloser, error) {
-	if err := self.imageHeader(opts); err != nil {
+func (encoder KittyEncoder) EncodeBase64(opts KittyImgOpts) (io.WriteCloser, error) {
+	if err := encoder.imageHeader(opts); err != nil {
 		return nil, err
 	}
 
-	return self.base64Writer(), nil
+	return encoder.base64Writer(), nil
 }
 
-func (self KittyEncoder) base64Writer() io.WriteCloser {
-	writer := KittyImageWriter{
+func (encoder KittyEncoder) base64Writer() io.WriteCloser {
+	return KittyImageWriter{
 		chunkSize: 4096,
-		inner:     self.writer,
+		writer:    encoder.writer,
 	}
-
-	return writer
 }

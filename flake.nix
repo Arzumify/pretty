@@ -14,6 +14,8 @@
         packages = with pkgs; [
           go
           gopls
+          wezterm
+          ghostty
         ];
       };
     });
